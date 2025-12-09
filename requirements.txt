@@ -1,53 +1,25 @@
-# Deep Learning Framework
-paddlepaddle-gpu>=2.4.0  # 或使用 paddlepaddle (CPU版本)
-# paddlepaddle>=2.4.0
+# ========================================
+# 推理必需依赖 (仅包含运行inference所需)
+# ========================================
 
-# Computer Vision
+# 深度学习框架 (2.2+即可)
+paddlepaddle-gpu>=2.2.0  # GPU版本
+# paddlepaddle>=2.2.0     # CPU版本 (二选一)
+
+# 视频处理
 opencv-python>=4.5.0
-opencv-contrib-python>=4.5.0
-Pillow>=8.0.0
-
-# Scientific Computing
 numpy>=1.19.0
-scipy>=1.5.0
 
-# Machine Learning
-scikit-learn>=0.24.0
-
-# Video Processing
-moviepy>=1.0.3
-ffmpeg-python>=0.2.0
-
-# Web Framework
-Flask>=2.0.0
-Flask-CORS>=3.0.10
+# Web界面
 gradio>=3.0.0
 
-# Data Processing
-pandas>=1.3.0
+# 配置文件
 PyYAML>=5.4.0
 
-# Visualization
-matplotlib>=3.3.0
-seaborn>=0.11.0
-tqdm>=4.62.0
-
-# Utilities
-requests>=2.26.0
-python-dotenv>=0.19.0
-
-# File handling
-Werkzeug>=2.0.0
-
-# PaddleVideo dependencies
-decord>=0.6.0
-av>=8.0.0
-
-# Optional: Audio processing (for future multi-modal fusion)
-# librosa>=0.9.0
-# soundfile>=0.10.0
-
-# Optional: Face recognition (for identity verification)
+# 视频解码 (PaddleVideo依赖)
+imageio>=2.9.0
+pandas>=1.1.0
+Pillow>=8.0.0
 # face-recognition>=1.3.0
 # dlib>=19.22.0
 

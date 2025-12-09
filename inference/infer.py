@@ -7,16 +7,21 @@ from paddle.inference import Config, create_predictor
 import gradio as gr
 import tempfile
 import subprocess  # 用于调用ffmpeg
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 添加特定路径
-sys.path.append('/home/aistudio/data/PaddleVideo-develop/paddlevideo/utils')
-sys.path.append('/home/aistudio/data/PaddleVideo-develop/tools')
+# 获取项目根目录
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
 
-# 默认路径
-DEFAULT_CONFIG = '/home/aistudio/data/configs/violence_detection/videoswin_violence.yaml'
-DEFAULT_MODEL_FILE = '/home/aistudio/inference/VideoSwin_base/VideoSwin.json'
-DEFAULT_PARAMS_FILE = '/home/aistudio/inference/VideoSwin_base/VideoSwin.pdiparams'
+# 添加PaddleVideo路径
+PADDLEVIDEO_DIR = os.path.join(ROOT_DIR, 'PaddleVideo-develop')
+sys.path.append(os.path.join(PADDLEVIDEO_DIR, 'paddlevideo', 'utils'))
+sys.path.append(os.path.join(PADDLEVIDEO_DIR, 'tools'))
+
+# 默认路径 - 使用当前目录下的模型
+INFERENCE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CONFIG = None  # 不使用配置文件，直接推理
+DEFAULT_MODEL_FILE = os.path.join(INFERENCE_DIR, 'VideoSwin.json')
+DEFAULT_PARAMS_FILE = os.path.join(INFERENCE_DIR, 'VideoSwin.pdiparams')
 
 from utils import build_inference_helper
 from paddlevideo.utils import get_config
