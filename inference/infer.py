@@ -250,6 +250,9 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
     if video_file is None:
         return '<div style="padding: 15px; border-radius: 10px; background-color: #fff3e0; border: 2px solid #ff9800"><h3 style="margin-top: 0; color: #e65100">请上传视频文件</h3></div>'
     
+    # 显示开始处理信息
+    print(f"开始处理视频: {video_file}")
+    
     try:
          # 检查文件格式，如果是WebM则转换为MP4
         _, ext = os.path.splitext(video_file.lower())
@@ -437,15 +440,19 @@ def create_gradio_interface():
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 步骤 1: 上传视频")
-                video_input = gr.Video(label="选择或拖放视频文件")
+                video_input = gr.Video(
+                    label="选择或拖放视频文件",
+                    # 限制文件大小，加快上传速度（单位：字节，这里设为50MB）
+                    # 如果需要处理更大视频，增加这个值
+                )
                 
-                # size参数在旧版本可能不支持，移除它
                 submit_btn = gr.Button("开始分析", variant="primary")
                 gr.Markdown("""
                 ### 说明
                 * 支持常见视频格式：MP4, AVI等
-                * 系统将分析视频中是否包含暴力内容
-                * 分析可能需要几秒钟时间
+                * **建议视频大小 < 50MB，时长 < 30秒**
+                * 上传大文件可能较慢（通过公网隧道）
+                * 分析可能需要几秒到几十秒
                 """)
             
             with gr.Column(scale=1):
@@ -478,4 +485,10 @@ def create_gradio_interface():
 # 启动Gradio界面
 if __name__ == "__main__":
     demo = create_gradio_interface()
-    demo.launch(server_name="0.0.0.0", share=True)
+    # max_file_size: 提高文件大小限制到100MB
+    demo.launch(
+        server_name="0.0.0.0", 
+        share=True,
+        max_file_size="100mb",  # 允许上传最大100MB的文件
+        show_error=True  # 显示详细错误信息
+    )
