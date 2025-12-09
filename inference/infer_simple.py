@@ -84,24 +84,48 @@ def inference_video(video_file):
     try:
         print(f"开始处理视频: {video_file}")
         
-        # 创建预测器
+        # 检查模型文件
+        if not os.path.exists(MODEL_FILE):
+            raise FileNotFoundError(f"模型文件不存在: {MODEL_FILE}")
+        if not os.path.exists(PARAMS_FILE):
+            raise FileNotFoundError(f"参数文件不存在: {PARAMS_FILE}")
+        
+        print(f"模型文件: {MODEL_FILE}")
+        print(f"参数文件: {PARAMS_FILE}")
+        print(f"模型文件大小: {os.path.getsize(MODEL_FILE)} bytes")
+        print(f"参数文件大小: {os.path.getsize(PARAMS_FILE)} bytes")
+        
+        # 创建预测器（CPU模式，更稳定）
+        print("创建推理配置...")
         config = Config(MODEL_FILE, PARAMS_FILE)
-        config.enable_use_gpu(100, 0)
-        config.switch_ir_optim(True)
+        config.disable_gpu()  # 使用CPU
+        config.switch_use_feed_fetch_ops(False)
+        config.switch_ir_optim(False)  # 关闭IR优化
+        config.enable_memory_optim()
+        
+        print("初始化预测器...")
         predictor = create_predictor(config)
+        print("预测器创建成功！")
         
         # 预处理
+        print("预处理视频...")
         video_data = preprocess_video(video_file, num_seg=1, seg_len=32)
+        print(f"预处理完成，数据形状: {video_data.shape}")
         
         # 推理
+        print("开始推理...")
         input_names = predictor.get_input_names()
         input_handle = predictor.get_input_handle(input_names[0])
         output_names = predictor.get_output_names()
         output_handle = predictor.get_output_handle(output_names[0])
         
+        print(f"输入名称: {input_names}")
+        print(f"输出名称: {output_names}")
+        
         input_handle.copy_from_cpu(video_data)
         predictor.run()
         output = output_handle.copy_to_cpu()
+        print(f"推理完成，输出形状: {output.shape}")
         
         # 后处理
         pred_class = np.argmax(output[0])
@@ -133,6 +157,8 @@ def inference_video(video_file):
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
+        print(f"错误: {str(e)}")
+        print(error_trace)
         return f'''
         <div style="padding: 15px; border-radius: 10px; background-color: #ffebee; border: 2px solid #ff5252">
             <h3 style="margin-top: 0; color: #c62828">发生错误</h3>
