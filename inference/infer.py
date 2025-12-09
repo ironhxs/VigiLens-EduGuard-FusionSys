@@ -254,7 +254,7 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
     print(f"开始处理视频: {video_file}")
     
     try:
-         # 检查文件格式，如果是WebM则转换为MP4
+        # 检查文件格式，如果是WebM则转换为MP4
         _, ext = os.path.splitext(video_file.lower())
         if ext == '.webm':
             print(f"检测到WebM格式视频: {video_file}")
@@ -270,8 +270,63 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
                 if converted_file != video_file:
                     print(f"已使用OpenCV将WebM转换为MP4: {video_file} -> {converted_file}")
                     video_file = converted_file
-        # 加载配置
-        cfg = get_config(config_path, overrides=[], show=False)
+        
+        # 直接使用自定义预处理（不依赖配置文件）
+        print("使用自定义预处理进行推理...")
+        
+        # 创建预测器配置
+        config = Config(model_file, params_file)
+        config.enable_use_gpu(100, 0)  # 100MB显存，GPU 0
+        config.switch_ir_optim(True)
+        predictor = create_predictor(config)
+        
+        # 获取输入输出
+        input_names = predictor.get_input_names()
+        output_names = predictor.get_output_names()
+        input_handle = predictor.get_input_handle(input_names[0])
+        output_handle = predictor.get_output_handle(output_names[0])
+        
+        # 使用自定义预处理（VideoSwin默认参数）
+        video_data = preprocess_video(
+            video_file,
+            num_seg=1,
+            seg_len=32,
+            short_size=256,
+            target_size=224
+        )
+        
+        # 运行推理
+        input_handle.copy_from_cpu(video_data)
+        predictor.run()
+        output = output_handle.copy_to_cpu()
+        
+        # 后处理：获取预测结果
+        pred_class = np.argmax(output[0])
+        confidence = output[0][pred_class]
+        
+        # 类别映射（0: 非暴力, 1: 暴力）
+        class_names = ["非暴力行为", "暴力行为"]
+        result_class = class_names[pred_class]
+        
+        print(f"预测结果: {result_class}, 置信度: {confidence:.4f}")
+        
+        # 返回格式化的HTML结果
+        if pred_class == 0:  # 非暴力
+            return f'''
+            <div style="padding: 20px; border-radius: 10px; background-color: #e8f5e9; border: 2px solid #4caf50">
+                <h3 style="margin-top: 0; color: #2e7d32">✓ 检测结果：{result_class}</h3>
+                <p style="font-size: 1.1em;"><strong>置信度：</strong> {confidence*100:.2f}%</p>
+                <p style="color: #558b2f;">该视频未检测到暴力行为</p>
+            </div>
+            '''
+        else:  # 暴力
+            return f'''
+            <div style="padding: 20px; border-radius: 10px; background-color: #ffebee; border: 2px solid #f44336">
+                <h3 style="margin-top: 0; color: #c62828">⚠ 检测结果：{result_class}</h3>
+                <p style="font-size: 1.1em;"><strong>置信度：</strong> {confidence*100:.2f}%</p>
+                <p style="color: #d32f2f;">警告：该视频包含疑似暴力内容</p>
+            </div>
+            '''
         
         # 初始化推理助手
         inference_helper = build_inference_helper(cfg.INFERENCE)
