@@ -251,7 +251,8 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
         return '<div style="padding: 15px; border-radius: 10px; background-color: #fff3e0; border: 2px solid #ff9800"><h3 style="margin-top: 0; color: #e65100">请上传视频文件</h3></div>'
     
     # 显示开始处理信息
-    print(f"开始处理视频: {video_file}")
+    print(f"✅ 视频已接收,开始处理: {video_file}")
+    print(f"📁 文件大小: {os.path.getsize(video_file) / (1024*1024):.2f} MB")
     
     try:
         # 检查文件格式，如果是WebM则转换为MP4
@@ -498,8 +499,17 @@ def create_gradio_interface():
                 video_input = gr.Video(
                     label="选择或拖放视频文件，或使用摄像头录制",
                     sources=["upload", "webcam"],  # 支持上传和录制
+                    format="mp4",  # 强制使用mp4格式,比webm小
                     # 限制文件大小，加快上传速度（单位：字节，这里设为50MB）
                     # 如果需要处理更大视频，增加这个值
+                )
+                
+                # 添加状态提示
+                upload_status = gr.Textbox(
+                    label="状态",
+                    value="等待上传视频...",
+                    interactive=False,
+                    visible=True
                 )
                 
                 submit_btn = gr.Button("开始分析", variant="primary")
@@ -509,9 +519,13 @@ def create_gradio_interface():
                 * **支持两种方式**：
                   - 📁 上传已有视频文件
                   - 📹 使用摄像头实时录制
-                * **建议视频大小 < 50MB，时长 < 30秒**
-                * 上传大文件可能较慢（通过公网隧道）
-                * 分析可能需要几秒到几十秒
+                * **录制建议** (AutoDL云服务器):
+                  - ⏱️ 录制时长控制在 **5-10秒** (上传更快)
+                  - 📦 录制后需上传到云端,请耐心等待
+                  - 🌐 上传速度取决于你的网络带宽
+                  - ✅ 看到"视频已上传"提示后再点击分析
+                * **建议视频大小 < 20MB**
+                * 分析可能需要几秒到十几秒
                 """)
             
             with gr.Column(scale=1):
@@ -533,6 +547,19 @@ def create_gradio_interface():
         gr.Markdown("---")
         gr.HTML('<div class="footer">© 2023 视频暴力行为检测系统 | 基于PaddleVideo</div>')
         
+        # 视频上传完成后更新状态
+        def update_upload_status(video):
+            if video is not None:
+                return "✅ 视频已上传,点击'开始分析'按钮"
+            return "等待上传视频..."
+        
+        video_input.change(
+            fn=update_upload_status,
+            inputs=video_input,
+            outputs=upload_status
+        )
+        
+        # 点击分析按钮
         submit_btn.click(
             fn=inference_video,
             inputs=video_input,
@@ -544,10 +571,15 @@ def create_gradio_interface():
 # 启动Gradio界面
 if __name__ == "__main__":
     demo = create_gradio_interface()
-    # max_file_size: 提高文件大小限制到100MB
+    # AutoDL 云服务器配置
+    # share=True: 必须开启,生成公网链接供远程访问
+    # max_file_size: 限制50MB,避免上传超时
     demo.launch(
-        server_name="0.0.0.0", 
-        share=True,
-        max_file_size="100mb",  # 允许上传最大100MB的文件
-        show_error=True  # 显示详细错误信息
+        server_name="0.0.0.0",  # 监听所有网络接口
+        server_port=6006,  # AutoDL 常用端口,也可以用其他端口
+        share=True,  # 必须为True,生成公网访问链接
+        max_file_size="50mb",  # 限制50MB,加快上传速度
+        show_error=True,  # 显示详细错误信息
+        # 以下参数可选,用于优化
+        # inbrowser=False,  # 不自动打开浏览器(云服务器上没浏览器)
     )
