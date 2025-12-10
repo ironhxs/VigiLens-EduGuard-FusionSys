@@ -163,49 +163,62 @@ def create_paddle_predictor(cfg, model_file, params_file, use_gpu=True, batch_si
 def check_ffmpeg():
     """检查ffmpeg是否可用"""
     try:
-        subprocess.run(['ffmpeg', '-version'], capture_output=True)
-        return True
-    except (subprocess.SubprocessError, FileNotFoundError):
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
+        return result.returncode == 0
+    except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired):
+        print("⚠️ ffmpeg未安装，将使用OpenCV处理视频")
         return False
 
-def convert_webm_to_mp4(input_file):
-    """将WebM格式转换为MP4格式"""
-    # 检查文件是否为WebM格式
+def convert_video_format(input_file):
+    """将各种视频格式转换为MP4格式 (支持WebM, MOV, AVI等)"""
     _, ext = os.path.splitext(input_file.lower())
-    if ext != '.webm':
-        return input_file  # 不是WebM格式，直接返回原文件
+    supported_formats = ['.webm', '.mov', '.avi', '.mkv', '.flv']
     
+    if ext not in supported_formats:
+        return input_file  # 已经是标准格式，直接返回
+    
+    print(f"📹 检测到 {ext.upper()} 格式，开始转换: {input_file}")
+    
+    # 优先使用OpenCV（不依赖ffmpeg）
     try:
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
-            output_file = temp_file.name
-        
-        print(f"检测到WebM格式，转换为MP4: {input_file} -> {output_file}")
-        
-        # 使用ffmpeg进行转换
-        cmd = [
-            'ffmpeg',
-            '-i', input_file,
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-crf', '23',
-            '-y',
-            output_file
-        ]
-        
-        # 执行命令
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"转换失败: {result.stderr}")
-            # 如果ffmpeg转换失败，尝试使用OpenCV
-            return convert_video_with_opencv(input_file)
-        
-        return output_file
-        
-    except Exception as e:
-        print(f"转换过程中出错: {str(e)}")
-        # 尝试使用OpenCV作为备选方案
         return convert_video_with_opencv(input_file)
+    except Exception as opencv_error:
+        print(f"OpenCV转换失败: {opencv_error}")
+        
+        # 如果OpenCV失败，尝试ffmpeg
+        if not check_ffmpeg():
+            print("⚠️ ffmpeg不可用且OpenCV转换失败，尝试直接使用WebM文件")
+            return input_file  # 直接返回原文件，让后续流程处理
+        
+        try:
+            # 创建临时文件
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                output_file = temp_file.name
+            
+            print(f"使用ffmpeg转换: {input_file} -> {output_file}")
+            
+            # 使用ffmpeg进行转换
+            cmd = [
+                'ffmpeg',
+                '-i', input_file,
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-y',
+                output_file
+            ]
+            
+            # 执行命令
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                print(f"ffmpeg转换失败: {result.stderr}")
+                return input_file
+            
+            return output_file
+            
+        except Exception as e:
+            print(f"ffmpeg转换过程中出错: {str(e)}")
+            return input_file
 
 def convert_video_with_opencv(input_file, output_file=None):
     """使用OpenCV读取视频并保存为MP4格式"""
@@ -213,35 +226,59 @@ def convert_video_with_opencv(input_file, output_file=None):
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
             output_file = temp_file.name
     
+    print(f"🎬 使用OpenCV转换视频: {input_file} -> {output_file}")
+    
     # 打开输入视频
     cap = cv2.VideoCapture(input_file)
     if not cap.isOpened():
-        print(f"无法打开视频: {input_file}")
-        return input_file
+        print(f"❌ 无法打开视频: {input_file}")
+        raise ValueError(f"无法打开视频文件: {input_file}")
     
     # 获取视频属性
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
+    if fps <= 0 or fps > 120:
         fps = 30  # 默认帧率
     
-    # 创建视频写入器
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+    print(f"📊 视频信息: {width}x{height}, {fps:.2f}fps")
+    
+    # 创建视频写入器 - 尝试多种编码器
+    fourcc_list = [
+        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),
+        ('avc1', cv2.VideoWriter_fourcc(*'avc1')),
+        ('X264', cv2.VideoWriter_fourcc(*'X264')),
+        ('XVID', cv2.VideoWriter_fourcc(*'XVID')),
+    ]
+    
+    out = None
+    for codec_name, fourcc in fourcc_list:
+        try:
+            out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+            if out.isOpened():
+                print(f"✅ 使用编码器: {codec_name}")
+                break
+        except:
+            continue
+    
+    if out is None or not out.isOpened():
+        cap.release()
+        raise ValueError("无法创建视频写入器，所有编码器都失败")
     
     # 逐帧读取并写入
+    frame_count = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         out.write(frame)
+        frame_count += 1
     
     # 释放资源
     cap.release()
     out.release()
     
-    print(f"已使用OpenCV将视频转换为MP4: {input_file} -> {output_file}")
+    print(f"✅ OpenCV转换完成: 共处理 {frame_count} 帧")
     return output_file
 
 def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_MODEL_FILE, params_file=DEFAULT_PARAMS_FILE):
@@ -255,25 +292,21 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
     print(f"📁 文件大小: {os.path.getsize(video_file) / (1024*1024):.2f} MB")
     
     try:
-        # 检查文件格式，如果是WebM则转换为MP4
+        # 检查并转换非标准格式视频
         _, ext = os.path.splitext(video_file.lower())
-        if ext == '.webm':
-            print(f"检测到WebM格式视频: {video_file}")
-            # 检查是否有ffmpeg
-            if check_ffmpeg():
-                converted_file = convert_webm_to_mp4(video_file)
-                if converted_file != video_file:
-                    print(f"已将WebM转换为MP4: {video_file} -> {converted_file}")
-                    video_file = converted_file
+        need_convert = ext in ['.webm', '.mov', '.avi', '.mkv', '.flv']
+        
+        if need_convert:
+            print(f"📹 检测到 {ext.upper()} 格式视频: {video_file}")
+            converted_file = convert_video_format(video_file)
+            if converted_file != video_file:
+                print(f"✅ 视频格式转换成功: {video_file} -> {converted_file}")
+                video_file = converted_file
             else:
-                print("警告: 检测到WebM格式，但ffmpeg不可用，尝试使用OpenCV转换")
-                converted_file = convert_video_with_opencv(video_file)
-                if converted_file != video_file:
-                    print(f"已使用OpenCV将WebM转换为MP4: {video_file} -> {converted_file}")
-                    video_file = converted_file
+                print(f"ℹ️ 将直接使用原始文件进行推理")
         
         # 直接使用自定义预处理（不依赖配置文件）
-        print("使用自定义预处理进行推理...")
+        print("🚀 使用自定义预处理进行推理...")
         
         # 创建预测器配置
         config = Config(model_file, params_file)
@@ -500,6 +533,7 @@ def create_gradio_interface():
                     label="选择或拖放视频文件，或使用摄像头录制",
                     sources=["upload", "webcam"],  # 支持上传和录制
                     format="mp4",  # 强制使用mp4格式,比webm小
+                    include_audio=False,  # 不包含音频,减小文件大小
                     # 限制文件大小，加快上传速度（单位：字节，这里设为50MB）
                     # 如果需要处理更大视频，增加这个值
                 )
@@ -515,9 +549,9 @@ def create_gradio_interface():
                 submit_btn = gr.Button("开始分析", variant="primary")
                 gr.Markdown("""
                 ### 说明
-                * 支持常见视频格式：MP4, AVI, WebM等
+                * 支持视频格式：**MP4, AVI, WebM, MOV**等
                 * **支持两种方式**：
-                  - 📁 上传已有视频文件
+                  - 📁 上传已有视频文件(包括iPhone录制的MOV)
                   - 📹 使用摄像头实时录制
                 * **录制建议** (AutoDL云服务器):
                   - ⏱️ 录制时长控制在 **5-10秒** (上传更快)
@@ -525,6 +559,7 @@ def create_gradio_interface():
                   - 🌐 上传速度取决于你的网络带宽
                   - ✅ 看到"视频已上传"提示后再点击分析
                 * **建议视频大小 < 20MB**
+                * **如果预览失败**: 不影响分析,直接点击"开始分析"即可
                 * 分析可能需要几秒到十几秒
                 """)
             
@@ -580,6 +615,7 @@ if __name__ == "__main__":
         share=True,  # 必须为True,生成公网访问链接
         max_file_size="50mb",  # 限制50MB,加快上传速度
         show_error=True,  # 显示详细错误信息
+        quiet=True,  # 减少控制台输出
         # 以下参数可选,用于优化
         # inbrowser=False,  # 不自动打开浏览器(云服务器上没浏览器)
     )
