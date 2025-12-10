@@ -7,21 +7,16 @@ from paddle.inference import Config, create_predictor
 import gradio as gr
 import tempfile
 import subprocess  # 用于调用ffmpeg
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 获取项目根目录
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(ROOT_DIR)
+# 添加特定路径
+sys.path.append('/home/aistudio/data/PaddleVideo-develop/paddlevideo/utils')
+sys.path.append('/home/aistudio/data/PaddleVideo-develop/tools')
 
-# 添加PaddleVideo路径
-PADDLEVIDEO_DIR = os.path.join(ROOT_DIR, 'PaddleVideo-develop')
-sys.path.append(os.path.join(PADDLEVIDEO_DIR, 'paddlevideo', 'utils'))
-sys.path.append(os.path.join(PADDLEVIDEO_DIR, 'tools'))
-
-# 默认路径 - 使用当前目录下的模型
-INFERENCE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CONFIG = None  # 不使用配置文件，直接推理
-DEFAULT_MODEL_FILE = os.path.join(INFERENCE_DIR, 'VideoSwin.json')
-DEFAULT_PARAMS_FILE = os.path.join(INFERENCE_DIR, 'VideoSwin.pdiparams')
+# 默认路径
+DEFAULT_CONFIG = '/home/aistudio/data/configs/violence_detection/videoswin_violence.yaml'
+DEFAULT_MODEL_FILE = '/home/aistudio/inference/VideoSwin_base/VideoSwin.json'
+DEFAULT_PARAMS_FILE = '/home/aistudio/inference/VideoSwin_base/VideoSwin.pdiparams'
 
 from utils import build_inference_helper
 from paddlevideo.utils import get_config
@@ -250,11 +245,8 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
     if video_file is None:
         return '<div style="padding: 15px; border-radius: 10px; background-color: #fff3e0; border: 2px solid #ff9800"><h3 style="margin-top: 0; color: #e65100">请上传视频文件</h3></div>'
     
-    # 显示开始处理信息
-    print(f"开始处理视频: {video_file}")
-    
     try:
-        # 检查文件格式，如果是WebM则转换为MP4
+         # 检查文件格式，如果是WebM则转换为MP4
         _, ext = os.path.splitext(video_file.lower())
         if ext == '.webm':
             print(f"检测到WebM格式视频: {video_file}")
@@ -270,63 +262,8 @@ def inference_video(video_file, config_path=DEFAULT_CONFIG, model_file=DEFAULT_M
                 if converted_file != video_file:
                     print(f"已使用OpenCV将WebM转换为MP4: {video_file} -> {converted_file}")
                     video_file = converted_file
-        
-        # 直接使用自定义预处理（不依赖配置文件）
-        print("使用自定义预处理进行推理...")
-        
-        # 创建预测器配置
-        config = Config(model_file, params_file)
-        config.enable_use_gpu(100, 0)  # 100MB显存，GPU 0
-        config.switch_ir_optim(True)
-        predictor = create_predictor(config)
-        
-        # 获取输入输出
-        input_names = predictor.get_input_names()
-        output_names = predictor.get_output_names()
-        input_handle = predictor.get_input_handle(input_names[0])
-        output_handle = predictor.get_output_handle(output_names[0])
-        
-        # 使用自定义预处理（VideoSwin默认参数）
-        video_data = preprocess_video(
-            video_file,
-            num_seg=1,
-            seg_len=32,
-            short_size=256,
-            target_size=224
-        )
-        
-        # 运行推理
-        input_handle.copy_from_cpu(video_data)
-        predictor.run()
-        output = output_handle.copy_to_cpu()
-        
-        # 后处理：获取预测结果
-        pred_class = np.argmax(output[0])
-        confidence = output[0][pred_class]
-        
-        # 类别映射（0: 非暴力, 1: 暴力）
-        class_names = ["非暴力行为", "暴力行为"]
-        result_class = class_names[pred_class]
-        
-        print(f"预测结果: {result_class}, 置信度: {confidence:.4f}")
-        
-        # 返回格式化的HTML结果
-        if pred_class == 0:  # 非暴力
-            return f'''
-            <div style="padding: 20px; border-radius: 10px; background-color: #e8f5e9; border: 2px solid #4caf50">
-                <h3 style="margin-top: 0; color: #2e7d32">✓ 检测结果：{result_class}</h3>
-                <p style="font-size: 1.1em;"><strong>置信度：</strong> {confidence*100:.2f}%</p>
-                <p style="color: #558b2f;">该视频未检测到暴力行为</p>
-            </div>
-            '''
-        else:  # 暴力
-            return f'''
-            <div style="padding: 20px; border-radius: 10px; background-color: #ffebee; border: 2px solid #f44336">
-                <h3 style="margin-top: 0; color: #c62828">⚠ 检测结果：{result_class}</h3>
-                <p style="font-size: 1.1em;"><strong>置信度：</strong> {confidence*100:.2f}%</p>
-                <p style="color: #d32f2f;">警告：该视频包含疑似暴力内容</p>
-            </div>
-            '''
+        # 加载配置
+        cfg = get_config(config_path, overrides=[], show=False)
         
         # 初始化推理助手
         inference_helper = build_inference_helper(cfg.INFERENCE)
@@ -494,24 +431,16 @@ def create_gradio_interface():
         
         with gr.Row():
             with gr.Column(scale=1):
-                gr.Markdown("### 步骤 1: 上传或录制视频")
-                video_input = gr.Video(
-                    label="选择或拖放视频文件，或使用摄像头录制",
-                    sources=["upload", "webcam"],  # 支持上传和录制
-                    # 限制文件大小，加快上传速度（单位：字节，这里设为50MB）
-                    # 如果需要处理更大视频，增加这个值
-                )
+                gr.Markdown("### 步骤 1: 上传视频")
+                video_input = gr.Video(label="选择或拖放视频文件")
                 
+                # size参数在旧版本可能不支持，移除它
                 submit_btn = gr.Button("开始分析", variant="primary")
                 gr.Markdown("""
                 ### 说明
-                * 支持常见视频格式：MP4, AVI, WebM等
-                * **支持两种方式**：
-                  - 📁 上传已有视频文件
-                  - 📹 使用摄像头实时录制
-                * **建议视频大小 < 50MB，时长 < 30秒**
-                * 上传大文件可能较慢（通过公网隧道）
-                * 分析可能需要几秒到几十秒
+                * 支持常见视频格式：MP4, AVI等
+                * 系统将分析视频中是否包含暴力内容
+                * 分析可能需要几秒钟时间
                 """)
             
             with gr.Column(scale=1):
@@ -544,10 +473,4 @@ def create_gradio_interface():
 # 启动Gradio界面
 if __name__ == "__main__":
     demo = create_gradio_interface()
-    # max_file_size: 提高文件大小限制到100MB
-    demo.launch(
-        server_name="0.0.0.0", 
-        share=True,
-        max_file_size="100mb",  # 允许上传最大100MB的文件
-        show_error=True  # 显示详细错误信息
-    )
+    demo.launch(server_name="0.0.0.0", share=True)
